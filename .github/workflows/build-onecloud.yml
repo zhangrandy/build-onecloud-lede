@@ -67,6 +67,7 @@ jobs:
         echo "CONFIG_TARGET_amlogic=y" >> .config
         echo "CONFIG_TARGET_amlogic_meson8b=y" >> .config
         echo "CONFIG_TARGET_amlogic_meson8b_DEVICE_thunder-onecloud=y" >> .config
+        echo "CONFIG_LINUX_6_1=y" >> .config
 
         # 2. Storage Modifications
         echo "CONFIG_TARGET_ROOTFS_SQUASHFS=y" >> .config
