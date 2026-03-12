@@ -172,10 +172,10 @@ jobs:
         retention-days: 1
 
 # ==========================================
-  # JOB 2: PACKAGE AND BURN 4GB IMAGE
+  # JOB 2: PACKAGE AND BURN 1GB IMAGE
   # ==========================================
   package:
-    name: Package 4GB Burn Image
+    name: Package 1GB Burn Image
     needs: compile  # This tells GitHub to WAIT for the compile job to finish
     runs-on: ubuntu-22.04
 
@@ -202,7 +202,7 @@ jobs:
         mkdir -p lede
         cp ../downloaded_images/*.img.gz lede/
 
-    - name: Execute 4GB Burn Script
+    - name: Execute 1GB Burn Script
       working-directory: ./onecloud-openwrt
       run: |
         cat << 'EOF' > gen_burn_img.sh
@@ -274,7 +274,7 @@ jobs:
         echo "Script execution completed."
         EOF
 
-        sudo chmod +x gen_burn_img.sh AmlIm
+        sudo chmod +x gen_burn_img.sh AmlImg
         sudo ./gen_burn_img.sh
 
     - name: Upload Final Burn Image
