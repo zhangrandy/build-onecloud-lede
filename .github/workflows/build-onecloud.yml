@@ -1,11 +1,12 @@
-name: Build Lean LEDE for Thunder OneCloud
+name: Build ImmortalWrt 24.10.5 for Thunder OneCloud
 
 on:
-  workflow_dispatch: # Allows you to manually trigger the build from the GitHub Actions tab
+  workflow_dispatch:
 
 env:
-  REPO_URL: https://github.com/coolsnowwolf/lede
-  REPO_BRANCH: master
+  REPO_URL: https://github.com/immortalwrt/immortalwrt.git
+  # Pointing precisely to the 24.10.5 tag
+  REPO_BRANCH: v24.10.5
 
 jobs:
   build:
@@ -30,18 +31,18 @@ jobs:
         android-sdk-libsparse-utils
         sudo apt-get clean
 
-    - name: Clone Lean LEDE Source
+    - name: Clone ImmortalWrt Source
       run: |
-        git clone -b $REPO_BRANCH --single-branch $REPO_URL lede
-        
+        git clone -b $REPO_BRANCH --single-branch $REPO_URL openwrt
+
     - name: Update and Install Feeds
-      working-directory: ./lede
+      working-directory: ./openwrt
       run: |
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Configure Network Settings (IP, Gateway, DNS, Disable DHCP)
-      working-directory: ./lede
+    - name: Configure Network Settings (Static IP 192.168.1.44, Gateway/DNS 192.168.1.1)
+      working-directory: ./openwrt
       run: |
         mkdir -p package/base-files/files/etc/uci-defaults
         cat << 'EOF' > package/base-files/files/etc/uci-defaults/99-custom-network
@@ -53,28 +54,35 @@ jobs:
         uci set network.lan.dns='192.168.1.1'
         # Disable DHCP Server on LAN
         uci set dhcp.lan.ignore='1'
+        # Force Chinese Language on first boot
+        uci set luci.main.lang='zh_cn'
         # Save and Apply
         uci commit network
         uci commit dhcp
+        uci commit luci
         exit 0
         EOF
         chmod +x package/base-files/files/etc/uci-defaults/99-custom-network
 
     - name: Generate Configuration
-      working-directory: ./lede
+      working-directory: ./openwrt
       run: |
-        # 1. Set the OneCloud Target
-        echo "CONFIG_TARGET_amlogic=y" >> .config
-        echo "CONFIG_TARGET_amlogic_meson8b=y" >> .config
-        echo "CONFIG_TARGET_amlogic_meson8b_DEVICE_thunder-onecloud=y" >> .config
-        echo "CONFIG_LINUX_6_1=y" >> .config
+        # 1. Set the ImmortalWrt Target (Meson / Meson8b for OneCloud)
+        echo "CONFIG_TARGET_meson=y" >> .config
+        echo "CONFIG_TARGET_meson_meson8b=y" >> .config
+        echo "CONFIG_TARGET_meson_meson8b_DEVICE_thunder-onecloud=y" >> .config
 
-        # 2. Storage Modifications
+        # 2. Storage Modifications (RootFS to 4096MB)
+        echo "CONFIG_TARGET_ROOTFS_EXT4FS=y" >> .config
         echo "CONFIG_TARGET_ROOTFS_SQUASHFS=y" >> .config
-        echo "CONFIG_TARGET_SQUASHFS_BLOCK_SIZE=256" >> .config
-        echo "CONFIG_TARGET_EXT4_BLOCKSIZE=4096" >> .config
+        echo "CONFIG_TARGET_ROOTFS_PARTSIZE=4096" >> .config
 
-        # 3. Additions
+        # 3. Base GUI and Language
+        echo "CONFIG_PACKAGE_luci=y" >> .config
+        echo "CONFIG_LUCI_LANG_zh_Hans=y" >> .config
+        echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
+
+        # 4. Your Custom Additions
         echo "CONFIG_PACKAGE_firewall4=y" >> .config
         echo "CONFIG_PACKAGE_cpufreq=y" >> .config
         echo "CONFIG_PACKAGE_nano-full=y" >> .config
@@ -83,20 +91,8 @@ jobs:
         echo "CONFIG_PACKAGE_wget-ssl=y" >> .config
         echo "CONFIG_PACKAGE_openssh-sftp-server=y" >> .config
         echo "CONFIG_PACKAGE_luci-app-diskman=y" >> .config
-
-        # 4. Removals
-        echo "# CONFIG_PACKAGE_luci-app-accesscontrol is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-arpbind is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-autoreboot is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-ddns is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-filetransfer is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-nlbwmon is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-rclone_INCLUDE_rclone-webui is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-turboacc is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-upnp is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-vlmcsd is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-vsftpd is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-wol is not set" >> .config
+        echo "CONFIG_PACKAGE_parted=y" >> .config
+        echo "CONFIG_PACKAGE_lsblk=y" >> .config
 
         # 5. Keepalived & Passwall Kernel Modules
         echo "CONFIG_PACKAGE_keepalived=y" >> .config
@@ -105,35 +101,53 @@ jobs:
         echo "CONFIG_PACKAGE_kmod-nf-socket=y" >> .config
         echo "CONFIG_PACKAGE_kmod-nft-socket=y" >> .config
         echo "CONFIG_PACKAGE_kmod-nft-tproxy=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-tun=y" >> .config
+
+        # 6. Explicit Removals (Disable unwanted packages)
+        echo "# CONFIG_PACKAGE_luci-app-accesscontrol is not set" >> .config
+        echo "# CONFIG_PACKAGE_luci-app-arpbind is not set" >> .config
+        echo "# CONFIG_PACKAGE_luci-app-autoreboot is not set" >> .config
+        echo "# CONFIG_PACKAGE_luci-app-ddns is not set" >> .config
+        echo "# CONFIG_PACKAGE_luci-app-filetransfer is not set" >> .config
+        echo "# CONFIG_PACKAGE_luci-app-nlbwmon is not set" >> .config
+        echo "# CONFIG_PACKAGE_luci-app-turboacc is not set" >> .config
+        echo "# CONFIG_PACKAGE_luci-app-upnp is not set" >> .config
+        echo "# CONFIG_PACKAGE_luci-app-vlmcsd is not set" >> .config
+        echo "# CONFIG_PACKAGE_luci-app-vsftpd is not set" >> .config
+        echo "# CONFIG_PACKAGE_luci-app-wol is not set" >> .config
 
         make defconfig
 
     - name: Download Packages
-      working-directory: ./lede
+      working-directory: ./openwrt
       run: |
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
     - name: Compile Firmware
-      working-directory: ./lede
+      working-directory: ./openwrt
       run: |
         make -j$(nproc) || make -j1 || make -j1 V=s
 
-    - name: OneCloud Post-Processing (Generate Burnable Image)
+    - name: OneCloud Post-Processing & 4GB Packaging
       run: |
         cd $GITHUB_WORKSPACE
         
-        # Clone the repo just to get AmlImg and uboot.img
+        # Clone ONLY xydche's repository to steal the AmlImg tools and uboot.img
         git clone https://github.com/xydche/onecloud-openwrt.git
         cd onecloud-openwrt
         
+        # Remove their custom patches/scripts to ensure a clean slate
         sudo rm -rf dependson README.md diy-part*
         
+        # Create the 'lede' directory expected by your script
         mkdir -p lede
-        cp $GITHUB_WORKSPACE/lede/bin/targets/amlogic/meson8b/*.img.gz lede/
         
-        # Inject the user's custom generation script
+        # Find the compiled image from ImmortalWrt and copy it to 'lede'
+        find $GITHUB_WORKSPACE/openwrt/bin/targets/meson/meson8b/ -name "*.img.gz" -exec cp {} lede/ \;
+        
+        # Inject YOUR custom 4GB burn script
         cat << 'EOF' > gen_burn_img.sh
         #!/bin/bash
         ./AmlImg unpack ./uboot.img burn/
@@ -154,6 +168,7 @@ jobs:
           exit 1
         fi
 
+        # User's 4GB allocation constraint
         dd if=/dev/zero of="${boot_img_name}" bs=1M count=4096 status=progress
         if [ $? -ne 0 ]; then
           echo "Error: Failed to create boot image."
@@ -208,5 +223,5 @@ jobs:
     - name: Upload Final Firmware Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: OneCloud-OpenWrt-Firmware
-        path: ${{ github.workspace }}/onecloud-openwrt/lede/*.burn.img.*
+        name: ImmortalWrt-OneCloud-24.10.5
+        path: ${{ github.workspace }}/onecloud-openwrt/*.burn.img.*
