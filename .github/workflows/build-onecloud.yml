@@ -68,9 +68,9 @@ jobs:
       working-directory: ./openwrt
       run: |
         # 1. Set the Native ImmortalWrt OneCloud Target
-        CONFIG_TARGET_amlogic=y
-        CONFIG_TARGET_amlogic_meson8b=y
-        CONFIG_TARGET_amlogic_meson8b_DEVICE_thunder-onecloud=y
+        echo "CONFIG_TARGET_amlogic=y" >> .config 
+        echo "CONFIG_TARGET_amlogic_meson8b=y" >> .config
+        echo "CONFIG_TARGET_amlogic_meson8b_DEVICE_thunder-onecloud=y" >> .config
 
         # 2. Storage Modifications (SquashFS only to satisfy the burn script)
         echo "CONFIG_TARGET_ROOTFS_EXT4FS=n" >> .config
