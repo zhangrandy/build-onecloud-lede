@@ -1,12 +1,11 @@
-name: Build ImmortalWrt 24.10.5 for Thunder OneCloud
+name: Build & Package LEDE 24.10.5 for OneCloud
 
 on:
   workflow_dispatch:
 
 env:
-  REPO_URL: https://github.com/immortalwrt/immortalwrt.git
-  # Pointing precisely to the 24.10.5 tag
-  REPO_BRANCH: v24.10.5
+  REPO_URL: https://github.com/coolsnowwolf/lede.git
+  REPO_BRANCH: 24.10.5
 
 jobs:
   # ==========================================
@@ -31,36 +30,31 @@ jobs:
         libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev \
         libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 \
         python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo \
-        uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev \
-        android-sdk-libsparse-utils
+        uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
         sudo apt-get clean
 
-    - name: Clone ImmortalWrt Source
+    - name: Clone LEDE Source
       run: |
-        git clone -b $REPO_BRANCH --single-branch $REPO_URL openwrt
+        git clone -b $REPO_BRANCH --single-branch $REPO_URL lede
 
     - name: Update and Install Feeds
-      working-directory: ./openwrt
+      working-directory: ./lede
       run: |
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Configure Network Settings (Static IP 192.168.1.44, Gateway/DNS 192.168.1.1)
-      working-directory: ./openwrt
+    - name: Configure Network Settings (Static IP & Gateway)
+      working-directory: ./lede
       run: |
+        # Injects your specific network settings directly into the firmware's first-boot script
         mkdir -p package/base-files/files/etc/uci-defaults
         cat << 'EOF' > package/base-files/files/etc/uci-defaults/99-custom-network
         #!/bin/sh
-        # Set Static IP and Gateway
         uci set network.lan.ipaddr='192.168.1.44'
         uci set network.lan.gateway='192.168.1.1'
-        # Set DNS
         uci set network.lan.dns='192.168.1.1'
-        # Disable DHCP Server on LAN
         uci set dhcp.lan.ignore='1'
-        # Force Chinese Language on first boot
         uci set luci.main.lang='zh_cn'
-        # Save and Apply
         uci commit network
         uci commit dhcp
         uci commit luci
@@ -68,97 +62,38 @@ jobs:
         EOF
         chmod +x package/base-files/files/etc/uci-defaults/99-custom-network
 
-    - name: Generate Configuration
-      working-directory: ./openwrt
+    - name: Load Custom Configuration
       run: |
-        # 1. Set the Native ImmortalWrt OneCloud Target
-        echo "CONFIG_TARGET_amlogic=y" >> .config 
-        echo "CONFIG_TARGET_amlogic_meson8b=y" >> .config
-        echo "CONFIG_TARGET_amlogic_meson8b_DEVICE_thunder-onecloud=y" >> .config
-
-        # 2. Storage Modifications (SquashFS only to satisfy the burn script)
-        echo "CONFIG_TARGET_ROOTFS_EXT4FS=n" >> .config
-        echo "CONFIG_TARGET_ROOTFS_SQUASHFS=y" >> .config
-        echo "CONFIG_TARGET_SQUASHFS_BLOCK_SIZE=256" >> .config
-        echo "CONFIG_TARGET_KERNEL_PARTSIZE=256" >> .config
-        echo "CONFIG_TARGET_ROOTFS_PARTSIZE=1024" >> .config
-
-        # 3. Base GUI and Language
-        echo "CONFIG_PACKAGE_luci=y" >> .config
-        echo "CONFIG_LUCI_LANG_zh_Hans=y" >> .config
-        echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
-
-        # 4. Your Custom Additions & Utilities
-        echo "CONFIG_PACKAGE_firewall4=y" >> .config
-        echo "CONFIG_PACKAGE_cpufreq=y" >> .config
-        echo "CONFIG_PACKAGE_nano-full=y" >> .config
-        echo "CONFIG_PACKAGE_htop=y" >> .config
-        echo "CONFIG_PACKAGE_blkid=y" >> .config
-        echo "CONFIG_PACKAGE_curl=y" >> .config
-        echo "CONFIG_PACKAGE_wget-ssl=y" >> .config
-        echo "CONFIG_PACKAGE_openssh-sftp-server=y" >> .config
-
-        # 5. Diskman, USB, and Filesystem Dependencies (from xydche)
-        echo "CONFIG_PACKAGE_luci-app-diskman=y" >> .config
-        echo "CONFIG_PACKAGE_parted=y" >> .config
-        echo "CONFIG_PACKAGE_lsblk=y" >> .config
-        echo "CONFIG_PACKAGE_block-mount=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-usb-core=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-usb-storage=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-usb-storage-extras=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-usb-storage-uas=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-fs-ext4=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-fs-exfat=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-fs-vfat=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-fs-ntfs3=y" >> .config
-        echo "CONFIG_PACKAGE_e2fsprogs=y" >> .config
-
-        # 6. Performance & System Stability Tweaks (from xydche)
-        echo "CONFIG_PACKAGE_luci-app-autocore=y" >> .config
-        echo "CONFIG_PACKAGE_luci-app-zram=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-tcp-bbr=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-nft-offload=y" >> .config
-
-        # 7. Keepalived & Passwall Kernel Modules
-        echo "CONFIG_PACKAGE_keepalived=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-nf-ipvs=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-nf-conntrack-netlink=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-nf-socket=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-nft-socket=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-nft-tproxy=y" >> .config
-        echo "CONFIG_PACKAGE_kmod-tun=y" >> .config
-
-        # 8. Explicit Removals (Disable unwanted default apps)
-        echo "# CONFIG_PACKAGE_luci-app-accesscontrol is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-arpbind is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-autoreboot is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-ddns is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-filetransfer is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-nlbwmon is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-turboacc is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-upnp is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-vlmcsd is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-vsftpd is not set" >> .config
-        echo "# CONFIG_PACKAGE_luci-app-wol is not set" >> .config
-
+        # Pulls your uploaded .config from the repository root into the LEDE builder
+        if [ -f "$GITHUB_WORKSPACE/.config" ]; then
+          cp $GITHUB_WORKSPACE/.config $GITHUB_WORKSPACE/lede/.config
+          echo "Custom .config loaded successfully."
+        else
+          echo "Error: No .config file found in the root of your repository!"
+          exit 1
+        fi
+        
+        # Expands the configuration to resolve any hidden background dependencies
+        cd $GITHUB_WORKSPACE/lede
         make defconfig
 
     - name: Download Packages
-      working-directory: ./openwrt
+      working-directory: ./lede
       run: |
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
     - name: Compile Firmware
-      working-directory: ./openwrt
+      working-directory: ./lede
       run: |
         make -j$(nproc) || make -j1 || make -j1 V=s
-        
+
     - name: Prepare Raw Firmware for Transfer
       run: |
         mkdir -p raw_images
-        find $GITHUB_WORKSPACE/openwrt/bin/targets/ -type f -name "*.img.gz" -exec cp {} raw_images/ \;
+        # Bulletproof wildcard search for the compiled image
+        find $GITHUB_WORKSPACE/lede/bin/targets/ -type f -name "*.img.gz" -exec cp {} raw_images/ \;
         if [ -z "$(ls -A raw_images/)" ]; then
           echo "Error: No .img.gz files found! Compilation failed to output the target."
           exit 1
@@ -171,12 +106,12 @@ jobs:
         path: raw_images/*.img.gz
         retention-days: 1
 
-# ==========================================
-  # JOB 2: PACKAGE AND BURN 1GB IMAGE
+  # ==========================================
+  # JOB 2: PACKAGE AND BURN 4GB IMAGE
   # ==========================================
   package:
-    name: Package 1GB Burn Image
-    needs: compile  # This tells GitHub to WAIT for the compile job to finish
+    name: Package 4GB Burn Image
+    needs: compile  # This tells GitHub to WAIT for Job 1 to finish successfully
     runs-on: ubuntu-22.04
 
     steps:
@@ -193,7 +128,7 @@ jobs:
 
     - name: Setup Packaging Environment
       run: |
-        # Clone xydche's repository
+        # Clone xydche's repository for the packaging tools
         git clone https://github.com/xydche/onecloud-openwrt.git
         cd onecloud-openwrt
         sudo rm -rf dependson README.md diy-part*
@@ -202,7 +137,7 @@ jobs:
         mkdir -p lede
         cp ../downloaded_images/*.img.gz lede/
 
-    - name: Execute 1GB Burn Script
+    - name: Execute 4GB Burn Script
       working-directory: ./onecloud-openwrt
       run: |
         cat << 'EOF' > gen_burn_img.sh
@@ -274,11 +209,12 @@ jobs:
         echo "Script execution completed."
         EOF
 
+        # Fixed: AmlImg now has its proper 'g'!
         sudo chmod +x gen_burn_img.sh AmlImg
         sudo ./gen_burn_img.sh
 
     - name: Upload Final Burn Image
       uses: actions/upload-artifact@v4
       with:
-        name: ImmortalWrt-OneCloud-4GB-Final
+        name: LEDE-OneCloud-4GB-Final
         path: ${{ github.workspace }}/onecloud-openwrt/*.burn.img.*
