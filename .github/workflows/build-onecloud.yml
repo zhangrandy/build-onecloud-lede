@@ -43,13 +43,25 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
         
-    - name: Inject Missing OneCloud Blueprint (DTS Fix for Kernel 6.6)
-      working-directory: ./lede
+    - name: Load Custom Configuration
       run: |
-        # Lean's kernel 6.6 is missing the OneCloud hardware blueprint. 
-        # We download it from the official archive and drop it into Lean's kernel overlay.
-        mkdir -p target/linux/amlogic/files/arch/arm/boot/dts/amlogic
-        curl -fsSL https://raw.githubusercontent.com/openwrt/openwrt/openwrt-23.05/target/linux/meson/files/arch/arm/boot/dts/amlogic/meson8b-onecloud.dts -o target/linux/amlogic/files/arch/arm/boot/dts/amlogic/meson8b-onecloud.dts        
+        # Pulls your uploaded .config from the repository root into the LEDE builder
+        if [ -f "$GITHUB_WORKSPACE/.config" ]; then
+          cp $GITHUB_WORKSPACE/.config $GITHUB_WORKSPACE/lede/.config
+          echo "Custom .config loaded successfully."
+        else
+          echo "Error: No .config file found in the root of your repository!"
+          exit 1
+        fi
+        
+        # 🚨 THE CRITICAL FIX: Force Lean's LEDE back to Kernel 6.1
+        # Lean deleted OneCloud support in 6.6, so we must forcefully append the 6.1 override to your config!
+        sed -i 's/KERNEL_PATCHVER:=.*/KERNEL_PATCHVER:=6.1/g' target/linux/amlogic/Makefile
+        echo "CONFIG_LINUX_6_1=y" >> $GITHUB_WORKSPACE/lede/.config
+        
+        # Expands the configuration to resolve any hidden background dependencies
+        cd $GITHUB_WORKSPACE/lede
+        make defconfig
 
     - name: Configure Network Settings (Static IP & Gateway)
       working-directory: ./lede
