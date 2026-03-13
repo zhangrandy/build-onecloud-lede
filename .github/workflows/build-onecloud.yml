@@ -42,6 +42,14 @@ jobs:
       run: |
         ./scripts/feeds update -a
         ./scripts/feeds install -a
+        
+    - name: Inject Missing OneCloud Blueprint (DTS Fix for Kernel 6.6)
+      working-directory: ./lede
+      run: |
+        # Lean's kernel 6.6 is missing the OneCloud hardware blueprint. 
+        # We download it from the official archive and drop it into Lean's kernel overlay.
+        mkdir -p target/linux/amlogic/files/arch/arm/boot/dts/amlogic
+        curl -fsSL https://raw.githubusercontent.com/openwrt/openwrt/openwrt-23.05/target/linux/meson/files/arch/arm/boot/dts/amlogic/meson8b-onecloud.dts -o target/linux/amlogic/files/arch/arm/boot/dts/amlogic/meson8b-onecloud.dts        
 
     - name: Configure Network Settings (Static IP & Gateway)
       working-directory: ./lede
