@@ -44,10 +44,11 @@ jobs:
         ./scripts/feeds install -a
         
     - name: Load Custom Configuration
+      working-directory: ./lede
       run: |
         # Pulls your uploaded .config from the repository root into the LEDE builder
         if [ -f "$GITHUB_WORKSPACE/.config" ]; then
-          cp $GITHUB_WORKSPACE/.config $GITHUB_WORKSPACE/lede/.config
+          cp $GITHUB_WORKSPACE/.config .config
           echo "Custom .config loaded successfully."
         else
           echo "Error: No .config file found in the root of your repository!"
@@ -57,10 +58,9 @@ jobs:
         # 🚨 THE CRITICAL FIX: Force Lean's LEDE back to Kernel 6.1
         # Lean deleted OneCloud support in 6.6, so we must forcefully append the 6.1 override to your config!
         sed -i 's/KERNEL_PATCHVER:=.*/KERNEL_PATCHVER:=6.1/g' target/linux/amlogic/Makefile
-        echo "CONFIG_LINUX_6_1=y" >> $GITHUB_WORKSPACE/lede/.config
+        echo "CONFIG_LINUX_6_1=y" >> .config
         
         # Expands the configuration to resolve any hidden background dependencies
-        cd $GITHUB_WORKSPACE/lede
         make defconfig
 
     - name: Configure Network Settings (Static IP & Gateway)
