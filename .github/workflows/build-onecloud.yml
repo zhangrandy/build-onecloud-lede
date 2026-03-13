@@ -5,7 +5,7 @@ on:
 
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
-  REPO_BRANCH: 24.10.4
+  REPO_BRANCH: master
 
 jobs:
   # ==========================================
