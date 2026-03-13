@@ -237,4 +237,5 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: LEDE-OneCloud-4GB-Final
+        # THE FIX: Added /lede/ to the path so it actually finds the file!
         path: ${{ github.workspace }}/onecloud-openwrt/lede/*.burn.img.*
