@@ -237,4 +237,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: LEDE-OneCloud-4GB-Final
-        path: ${{ github.workspace }}/onecloud-openwrt/*.burn.img.*
+        path: ${{ github.workspace }}/onecloud-openwrt/lede/*.burn.img.*
