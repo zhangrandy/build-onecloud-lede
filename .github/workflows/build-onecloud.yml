@@ -30,18 +30,19 @@ jobs:
         libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev \
         libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 \
         python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo \
-        uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+        uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev \
+        zstd dos2unix nodejs npm jq
         sudo apt-get clean
 
     - name: Clone LEDE Source
       run: |
         git clone -b $REPO_BRANCH --single-branch $REPO_URL lede
 
-    - name: Update feeds
-      run: cd lede && ./scripts/feeds update -a
-
-    - name: Install feeds
-      run: cd lede && ./scripts/feeds install -a
+    - name: Update and Install Feeds
+      run: |
+        cd lede
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
 
     - name: Inject Official Passwall Feeds (Method 2)
       run: |
@@ -58,26 +59,9 @@ jobs:
         ./scripts/feeds update -i
         ./scripts/feeds install -a
         
-    - name: Load custom configuration
-      run: |
-        [ -e files ] && mv files lede/files
-        [ -e .config ] && mv .config lede/.config
-        cd lede
-        
-        # The Bulletproof Kernel Downgrade for OneCloud (Meson8b)
-        # 1. Force Lean's target Makefile to default to the 6.1 kernel
-        sed -i 's/KERNEL_PATCHVER:=.*/KERNEL_PATCHVER:=6.1/g' target/linux/meson/Makefile
-        
-        # 2. Append it to the .config one last time just to be absolutely certain
-        echo "CONFIG_LINUX_6_1=y" >> .config
-        
-        # Generate the final dependency tree
-        make defconfig
-
     - name: Configure Network Settings (Static IP & Gateway)
-      working-directory: ./lede
       run: |
-        # Injects your specific network settings directly into the firmware's first-boot script
+        cd lede
         mkdir -p package/base-files/files/etc/uci-defaults
         cat << 'EOF' > package/base-files/files/etc/uci-defaults/99-custom-network
         #!/bin/sh
@@ -93,19 +77,25 @@ jobs:
         EOF
         chmod +x package/base-files/files/etc/uci-defaults/99-custom-network
 
-    - name: Load Custom Configuration
+    - name: Load Custom Configuration & Force Kernel
       run: |
-        # Pulls your uploaded .config from the repository root into the LEDE builder
+        # Pulls your uploaded .config from the repository root
         if [ -f "$GITHUB_WORKSPACE/.config" ]; then
           cp $GITHUB_WORKSPACE/.config $GITHUB_WORKSPACE/lede/.config
-          echo "Custom .config loaded successfully."
         else
           echo "Error: No .config file found in the root of your repository!"
           exit 1
         fi
         
-        # Expands the configuration to resolve any hidden background dependencies
         cd $GITHUB_WORKSPACE/lede
+        
+        # 1. Force Lean's target Makefile to default to the 6.1 kernel
+        sed -i 's/KERNEL_PATCHVER:=.*/KERNEL_PATCHVER:=6.1/g' target/linux/meson/Makefile
+        
+        # 2. Append it to the .config one last time
+        echo "CONFIG_LINUX_6_1=y" >> .config
+        
+        # Generate the final dependency tree
         make defconfig
 
     - name: Download Packages
@@ -123,14 +113,13 @@ jobs:
     - name: Prepare Raw Firmware for Transfer
       run: |
         mkdir -p raw_images
-        # Bulletproof wildcard search for the compiled image
         find $GITHUB_WORKSPACE/lede/bin/targets/ -type f -name "*.img.gz" -exec cp {} raw_images/ \;
         if [ -z "$(ls -A raw_images/)" ]; then
-          echo "Error: No .img.gz files found! Compilation failed to output the target."
+          echo "Error: No .img.gz files found! Compilation failed."
           exit 1
         fi
 
-    - name: Upload Raw Firmware Artifact (Hidden Transfer)
+    - name: Upload Raw Firmware Artifact
       uses: actions/upload-artifact@v4
       with:
         name: Raw-Compiled-Image
@@ -142,7 +131,7 @@ jobs:
   # ==========================================
   package:
     name: Package 4GB Burn Image
-    needs: compile  # This tells GitHub to WAIT for Job 1 to finish successfully
+    needs: compile
     runs-on: ubuntu-22.04
 
     steps:
@@ -159,12 +148,9 @@ jobs:
 
     - name: Setup Packaging Environment
       run: |
-        # Clone xydche's repository for the packaging tools
         git clone https://github.com/xydche/onecloud-openwrt.git
         cd onecloud-openwrt
         sudo rm -rf dependson README.md diy-part*
-        
-        # Create lede directory and move downloaded images into it
         mkdir -p lede
         cp ../downloaded_images/*.img.gz lede/
 
@@ -191,32 +177,12 @@ jobs:
           exit 1
         fi
 
-        # User's 4GB allocation constraint
         dd if=/dev/zero of="${boot_img_name}" bs=1M count=4096 status=progress
-        if [ $? -ne 0 ]; then
-          echo "Error: Failed to create boot image."
-          exit 1
-        fi
-
         /sbin/mkfs.ext4 "${boot_img_name}"
-        if [ $? -ne 0 ]; then
-          echo "Error: Failed to format boot image."
-          exit 1
-        fi
-
         mkdir -p "${boot_img_mnt}" "${rootfs_img_mnt}"
         sudo mount "${boot_img_name}" "${boot_img_mnt}"
-        if [ $? -ne 0 ]; then
-          echo "Error: Failed to mount boot image."
-          exit 1
-        fi
-
         sudo mount "${loop}p2" "${rootfs_img_mnt}"
-        if [ $? -ne 0 ]; then
-          echo "Error: Failed to mount rootfs partition."
-          exit 1
-        fi
-
+        
         sudo cp -rp ${rootfs_img_mnt}/* "${boot_img_mnt}"
         sudo sync
 
@@ -227,7 +193,6 @@ jobs:
         sudo img2simg "${loop}p1" burn/boot.simg
         sudo img2simg "${boot_img_name}" burn/rootfs.simg
         sudo rm -f "${boot_img_name}"
-
         sudo losetup -d "$loop" || true
 
         printf "PARTITION:boot:sparse:boot.simg\nPARTITION:rootfs:sparse:rootfs.simg\n" >> burn/commands.txt
@@ -237,17 +202,27 @@ jobs:
         xz -9 --threads=0 --compress "${burnimg_name}"
         rm -rf burn
         rm ${diskimg_path}
-        echo "Script execution completed."
         EOF
-
-        # Fixed: AmlImg now has its proper 'g'!
         sudo chmod +x gen_burn_img.sh AmlImg
         sudo ./gen_burn_img.sh
 
-    - name: Upload Final Burn Image
-      uses: actions/upload-artifact@v4
+    - name: Generate Release Tag
+      id: tag
+      run: echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_ENV
+
+    - name: Publish Final Image to GitHub Releases
+      uses: softprops/action-gh-release@v2
       with:
-        name: LEDE-OneCloud-4GB-Final
-        # The '**' tells GitHub to search recursively through all folders!
-        path: ${{ github.workspace }}/**/*.burn.img.*
-      
+        tag_name: ${{ env.release_tag }}
+        name: Custom 4GB OneCloud Firmware - ${{ env.release_tag }}
+        files: |
+          ${{ github.workspace }}/**/*.burn.img.xz
+          ${{ github.workspace }}/**/*.burn.img.sha
+        body: |
+          ### Custom OneCloud Build
+          * Size: 4GB RootFS
+          * Target: Meson8b (Thunder OneCloud)
+          * Kernel: Fixed to Linux 6.1
+          * Pre-installed Drivers: Passwall Transparent Proxy / nftables hooks baked in.
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
