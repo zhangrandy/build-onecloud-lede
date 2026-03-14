@@ -34,9 +34,16 @@ jobs:
         zstd dos2unix nodejs npm jq
         sudo apt-get clean
 
-    - name: Clone LEDE Source
+    - name: Clone LEDE Source & Rewind to Stable State
       run: |
-        git clone -b $REPO_BRANCH --single-branch $REPO_URL lede
+        # Clone the full repository so we have access to the timeline
+        git clone $REPO_URL lede
+        cd lede
+        
+        # The Git Time Machine: Rewind the code to February 20, 2026
+        STABLE_COMMIT=$(git rev-list -n 1 --before="2026-02-20 00:00" master)
+        git checkout $STABLE_COMMIT
+        echo "Successfully rewound LEDE source to commit: $STABLE_COMMIT"
 
     - name: Update and Install Feeds
       run: |
@@ -79,7 +86,6 @@ jobs:
 
     - name: Load Custom Configuration & Force Kernel
       run: |
-        # Pulls your uploaded .config from the repository root
         if [ -f "$GITHUB_WORKSPACE/.config" ]; then
           cp $GITHUB_WORKSPACE/.config $GITHUB_WORKSPACE/lede/.config
         else
@@ -89,13 +95,13 @@ jobs:
         
         cd $GITHUB_WORKSPACE/lede
         
-        # 1. Force Lean's target Makefile to default to the 6.1 kernel
-        # sed -i 's/KERNEL_PATCHVER:=.*/KERNEL_PATCHVER:=6.1/g' target/linux/meson/Makefile
+        # The ultimate, space-ignoring regex to force the 6.1 kernel
+        # We target both possible folder names and catch any formatting variations
+        sed -i 's/KERNEL_PATCHVER.*/KERNEL_PATCHVER:=6.1/g' target/linux/meson/Makefile 2>/dev/null || true
+        sed -i 's/KERNEL_PATCHVER.*/KERNEL_PATCHVER:=6.1/g' target/linux/amlogic/Makefile 2>/dev/null || true
         
-        # 2. Append it to the .config one last time
         echo "CONFIG_LINUX_6_1=y" >> .config
         
-        # Generate the final dependency tree
         make defconfig
 
     - name: Download Packages
