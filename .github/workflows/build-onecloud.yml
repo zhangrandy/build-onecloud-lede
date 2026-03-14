@@ -37,30 +37,41 @@ jobs:
       run: |
         git clone -b $REPO_BRANCH --single-branch $REPO_URL lede
 
-    - name: Update and Install Feeds
-      working-directory: ./lede
+    - name: Update feeds
+      run: cd lede && ./scripts/feeds update -a
+
+    - name: Install feeds
+      run: cd lede && ./scripts/feeds install -a
+
+    - name: Inject Official Passwall Feeds (Method 2)
       run: |
-        ./scripts/feeds update -a
+        cd lede
+        # Nuke the conflicting, outdated packages from Lean's default feeds
+        rm -rf feeds/packages/net/{xray-core,v2ray-geodata,sing-box,chinadns-ng,dns2socks,hysteria,ipt2socks,microsocks,naiveproxy,shadowsocks-libev,shadowsocks-rust,shadowsocksr-libev,simple-obfs,tcping,trojan-plus,tuic-client,v2ray-plugin,xray-plugin,geoview,shadow-tls}
+        rm -rf feeds/luci/applications/luci-app-passwall
+        
+        # Clone the bleeding-edge official Passwall packages
+        git clone https://github.com/Openwrt-Passwall/openwrt-passwall-packages package/passwall-packages
+        git clone https://github.com/Openwrt-Passwall/openwrt-passwall package/passwall
+        
+        # Re-index the system so the compiler recognizes the new paths
+        ./scripts/feeds update -i
         ./scripts/feeds install -a
         
-    - name: Load Custom Configuration
-      working-directory: ./lede
+    - name: Load custom configuration
       run: |
-        # Pulls your uploaded .config from the repository root into the LEDE builder
-        if [ -f "$GITHUB_WORKSPACE/.config" ]; then
-          cp $GITHUB_WORKSPACE/.config .config
-          echo "Custom .config loaded successfully."
-        else
-          echo "Error: No .config file found in the root of your repository!"
-          exit 1
-        fi
+        [ -e files ] && mv files lede/files
+        [ -e .config ] && mv .config lede/.config
+        cd lede
         
-        # 🚨 THE CRITICAL FIX: Force Lean's LEDE back to Kernel 6.1
-        # Lean deleted OneCloud support in 6.6, so we must forcefully append the 6.1 override to your config!
-        sed -i 's/KERNEL_PATCHVER:=.*/KERNEL_PATCHVER:=6.1/g' target/linux/amlogic/Makefile
+        # The Bulletproof Kernel Downgrade for OneCloud (Meson8b)
+        # 1. Force Lean's target Makefile to default to the 6.1 kernel
+        sed -i 's/KERNEL_PATCHVER:=.*/KERNEL_PATCHVER:=6.1/g' target/linux/meson/Makefile
+        
+        # 2. Append it to the .config one last time just to be absolutely certain
         echo "CONFIG_LINUX_6_1=y" >> .config
         
-        # Expands the configuration to resolve any hidden background dependencies
+        # Generate the final dependency tree
         make defconfig
 
     - name: Configure Network Settings (Static IP & Gateway)
