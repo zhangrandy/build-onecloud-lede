@@ -90,7 +90,7 @@ jobs:
         cd $GITHUB_WORKSPACE/lede
         
         # 1. Force Lean's target Makefile to default to the 6.1 kernel
-        sed -i 's/KERNEL_PATCHVER:=.*/KERNEL_PATCHVER:=6.1/g' target/linux/meson/Makefile
+        # sed -i 's/KERNEL_PATCHVER:=.*/KERNEL_PATCHVER:=6.1/g' target/linux/meson/Makefile
         
         # 2. Append it to the .config one last time
         echo "CONFIG_LINUX_6_1=y" >> .config
